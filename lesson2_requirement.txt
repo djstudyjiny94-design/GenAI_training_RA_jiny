@@ -1,0 +1,6 @@
+os
+openai
+api_key = "AZURE_OPENAI_API_KEY"
+api_base = "AZURE_OPENAI_ENDPOINT"
+api_version = "AZURE_OPENAI_API_VERSION"
+deployment_name = "AZURE_OPENAI_DEPLOYMENT_NAME"
