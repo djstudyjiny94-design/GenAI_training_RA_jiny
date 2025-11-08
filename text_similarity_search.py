@@ -1,0 +1,107 @@
+# 💡 Hybrid RAG (FAISS + BM25) with Azure OpenAI API
+# ==================================================
+
+import os
+from dotenv import load_dotenv  # ✅ Load environment variables
+from openai import AzureOpenAI
+
+load_dotenv()
+
+# Get environment variables
+api_key = os.getenv("AZURE_OPENAI_API_KEY")
+api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
+api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+
+# -----------------------------
+# 2️ Import LangChain modules
+# -----------------------------
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.docstore.document import Document
+from langchain_classic.prompts import PromptTemplate
+from langchain_classic.retrievers import EnsembleRetriever, BM25Retriever
+from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import AzureChatOpenAI
+
+# 3️ Prepare documents
+# -----------------------------
+texts = [
+    "LangChain is a framework for building applications powered by language models.",
+    "FAISS is a library for efficient similarity search and clustering of dense vectors.",
+    "Ollama lets you run large language models locally on your machine.",
+    "Mistral is a powerful open-weight LLM optimized for performance and accuracy.",
+    "jiny is a good leader and data scientist.","jiny loves programming and AI."
+]
+
+docs = [Document(page_content=t) for t in texts]
+
+# -----------------------------
+# 4️ Create embeddings & FAISS index
+# -----------------------------
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+faiss_store = FAISS.from_documents(docs, embeddings)
+faiss_retriever = faiss_store.as_retriever(search_kwargs={"k": 3})
+
+# -----------------------------
+# 5️ Add BM25 for keyword search
+# -----------------------------
+bm25_retriever = BM25Retriever.from_documents(docs)
+bm25_retriever.k = 3
+
+# Combine semantic (FAISS) + keyword (BM25)
+retriever = EnsembleRetriever(
+    retrievers=[faiss_retriever, bm25_retriever],
+    weights=[0.5, 0.5],
+)
+
+# -----------------------------
+# 6️ Define Azure OpenAI LLM
+# -----------------------------
+llm = AzureChatOpenAI(
+    azure_endpoint=api_base,
+    api_key=api_key,
+    api_version=api_version,
+    azure_deployment=deployment_name,
+    temperature=0.3)
+
+# -----------------------------
+# 7️ Define prompt
+# -----------------------------
+prompt_template = """You are a helpful assistant using the retrieved context to answer the question.
+Use only the context provided, and be concise.
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:"""
+
+prompt = PromptTemplate.from_template(prompt_template)
+
+# -----------------------------
+# 8️⃣ Build custom RAG pipeline
+# -----------------------------
+rag_chain = (
+    RunnableParallel(
+        {"context": retriever, "question": RunnablePassthrough()}
+    )
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+# -----------------------------
+# 9️ Run query
+# -----------------------------
+query = "which is a powerfull llm?"
+answer = rag_chain.invoke(query)
+
+# -----------------------------
+#  Display result
+# -----------------------------
+print("💬 Question:", query)
+print("🧠 Answer:", answer)
